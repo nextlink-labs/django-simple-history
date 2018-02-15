@@ -3,6 +3,9 @@ import importlib
 import uuid
 import warnings
 
+from contextlib import contextmanager
+from functools import partial
+
 from django.apps import apps
 from django.conf import settings
 from django.contrib import admin
@@ -11,6 +14,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.db.models import ManyToManyField
 from django.db.models.fields.proxy import OrderWrt
+from django.db.models.signals import m2m_changed
 from django.forms.models import model_to_dict
 from django.urls import reverse
 from django.utils import timezone
@@ -79,6 +83,7 @@ class HistoricalRecords:
         related_name=None,
         use_base_model_db=False,
         user_db_constraint=True,
+        m2m_fields=(),
     ):
         self.user_set_verbose_name = verbose_name
         self.user_related_name = user_related_name
@@ -101,6 +106,7 @@ class HistoricalRecords:
         if excluded_fields is None:
             excluded_fields = []
         self.excluded_fields = excluded_fields
+        self.m2m_fields = m2m_fields
         try:
             if isinstance(bases, str):
                 raise TypeError
@@ -138,6 +144,14 @@ class HistoricalRecords:
 
         setattr(cls, "save_without_historical_record", save_without_historical_record)
 
+        @contextmanager
+        def use_last_historical_record(self):
+            self.skip_history_when_saving = True
+            yield
+            del self.skip_history_when_saving
+
+        setattr(cls, 'use_last_historical_record', use_last_historical_record)
+
     def finalize(self, sender, **kwargs):
         inherited = False
         if self.cls is not sender:  # set in concrete
@@ -163,6 +177,9 @@ class HistoricalRecords:
         # so the signal handlers can't use weak references.
         models.signals.post_save.connect(self.post_save, sender=sender, weak=False)
         models.signals.post_delete.connect(self.post_delete, sender=sender, weak=False)
+        for field in self.m2m_fields:
+            m2m_changed.connect(partial(self.m2m_changed, attr=field.name),
+                                sender=field.remote_field.through, weak=False)
 
         descriptor = HistoryDescriptor(history_model)
         setattr(sender, self.manager_name, descriptor)
@@ -445,6 +462,8 @@ class HistoricalRecords:
             ),
             "get_default_history_user": staticmethod(get_default_history_user),
         }
+        for field in self.m2m_fields:
+            extra_fields[field.name] = models.ManyToManyField(field.remote_field.model)
 
         extra_fields.update(self._get_history_related_field(model))
         extra_fields.update(self._get_history_user_fields())
@@ -481,6 +500,29 @@ class HistoricalRecords:
             manager.using(using).all().delete()
         else:
             self.create_historical_record(instance, "-", using=using)
+
+    def m2m_changed(self, instance, action, attr, pk_set, reverse, **_):
+        if reverse:
+            # TODO - Reverse m2m update does not work
+            # HistoricalModel contains the ManyToManyField, so this call
+            # modifies the reverse relation
+            return
+
+        if hasattr(instance, 'skip_history_when_saving'):
+            historical = instance.history.latest()
+        else:
+            # TODO - m2m update should create new version
+            # Currently updates latest version, but in fact should create new one
+            historical = None
+
+        field = getattr(historical, attr)
+
+        if action == 'post_add':
+            field.add(*pk_set)
+        if action == 'post_remove':
+            field.remove(*pk_set)
+        if action == 'post_clear':
+            field.clear()
 
     def create_historical_record(self, instance, history_type, using=None):
         using = using if self.use_base_model_db else None
