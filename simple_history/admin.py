@@ -133,9 +133,11 @@ class SimpleHistoryAdmin(admin.ModelAdmin):
         else:
             change_history = False
 
+        history = utils.get_history_manager_for_model(obj)
+        history_obj = history.get(pk=version_id)
+
         if "_change_history" in request.POST and SIMPLE_HISTORY_EDIT:
-            history = utils.get_history_manager_for_model(obj)
-            obj = history.get(pk=version_id).instance
+            obj = history_obj.instance
 
         formsets = []
         form_class = self.get_form(request, obj)
@@ -155,6 +157,14 @@ class SimpleHistoryAdmin(admin.ModelAdmin):
 
         else:
             form = form_class(instance=obj)
+
+            # update values of any m2m fields with history
+            form.initial.update(
+                {
+                    field_name: history_obj.crm_leads.all()
+                    for field_name in history_obj._history_m2m_fields
+                }
+            )
 
         admin_form = helpers.AdminForm(
             form,
