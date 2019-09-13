@@ -14,6 +14,7 @@ from .models import (
     Paper,
     Person,
     Poll,
+    Pizza,
 )
 
 
@@ -43,3 +44,4 @@ admin.site.register(Employee, SimpleHistoryAdmin)
 admin.site.register(ConcreteExternal, SimpleHistoryAdmin)
 admin.site.register(ExternalModelWithCustomUserIdField, SimpleHistoryAdmin)
 admin.site.register(FileModel, FileModelAdmin)
+admin.site.register(Pizza, SimpleHistoryAdmin)

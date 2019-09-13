@@ -667,3 +667,21 @@ class ForeignKeyToSelfModel(models.Model):
 class Street(models.Model):
     name = models.CharField(max_length=150)
     log = HistoricalRecords(related_name="history")
+
+
+class PizzaTopping(models.Model):
+    name = models.CharField(max_length=50)
+
+
+class Pizza(models.Model):
+    name = models.CharField(max_length=50)
+
+    cheeses = models.ManyToManyField(
+        PizzaTopping, blank=True, related_name="pizza_cheese"
+    )
+    meats = models.ManyToManyField(PizzaTopping, blank=True, related_name="pizza_meat")
+    veggies = models.ManyToManyField(
+        PizzaTopping, blank=True, related_name="pizza_veggie"
+    )
+
+    history = HistoricalRecords(m2m_fields=["cheeses", "meats"])

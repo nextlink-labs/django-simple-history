@@ -93,6 +93,8 @@ from ..models import (
     UnicodeVerboseName,
     UserTextFieldChangeReasonModel,
     WaterLevel,
+    PizzaTopping,
+    Pizza,
 )
 
 get_model = apps.get_model
@@ -307,6 +309,401 @@ class HistoricalRecordsTest(TestCase):
             "the '+' shouldn't leak through to the original "
             "model's field related_name",
         )
+
+    def test_manytomany_field(self):
+        cheese1 = PizzaTopping.objects.create(name="mozzarella")
+
+        meat1 = PizzaTopping.objects.create(name="pepperoni")
+        meat2 = PizzaTopping.objects.create(name="sausage")
+
+        veggie1 = PizzaTopping.objects.create(name="mushroom")
+        veggie2 = PizzaTopping.objects.create(name="olive")
+
+        pizza = Pizza.objects.create(name="Plain")
+
+        pizza_history = list(pizza.history.all())
+        self.assertEqual(len(pizza_history), 1)
+        self.assertRecordValues(
+            pizza_history[0],
+            Pizza,
+            {"id": pizza.id, "name": "Plain", "history_type": "+"},
+        )
+        self.assertListEqual(
+            list(pizza_history[0].cheeses.values_list("pk", flat=True)), []
+        )
+        self.assertListEqual(
+            list(pizza_history[0].meats.values_list("pk", flat=True)), []
+        )
+        self.assertFalse(hasattr(pizza_history[0], "veggies"))
+
+        self.assertListEqual(list(pizza.cheeses.values_list("pk", flat=True)), [])
+        self.assertListEqual(list(pizza.meats.values_list("pk", flat=True)), [])
+        self.assertListEqual(list(pizza.veggies.values_list("pk", flat=True)), [])
+
+        pizza.name = "Cheese"
+        pizza.save()
+        pizza.cheeses.add(cheese1)
+
+        pizza_history = list(pizza.history.all())
+        self.assertEqual(len(pizza_history), 3)
+        self.assertRecordValues(
+            pizza_history[2],
+            Pizza,
+            {"id": pizza.id, "name": "Plain", "history_type": "+"},
+        )
+        self.assertListEqual(
+            list(pizza_history[2].cheeses.values_list("pk", flat=True)), []
+        )
+        self.assertListEqual(
+            list(pizza_history[2].meats.values_list("pk", flat=True)), []
+        )
+        self.assertRecordValues(
+            pizza_history[1],
+            Pizza,
+            {"id": pizza.id, "name": "Cheese", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[1].cheeses.values_list("pk", flat=True)), []
+        )
+        self.assertListEqual(
+            list(pizza_history[1].meats.values_list("pk", flat=True)), []
+        )
+        self.assertRecordValues(
+            pizza_history[0],
+            Pizza,
+            {"id": pizza.id, "name": "Cheese", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[0].cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(
+            list(pizza_history[0].meats.values_list("pk", flat=True)), []
+        )
+
+        self.assertListEqual(
+            list(pizza.cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(list(pizza.meats.values_list("pk", flat=True)), [])
+        self.assertListEqual(list(pizza.veggies.values_list("pk", flat=True)), [])
+
+        # veggies aren't tracked in `m2m_fields`
+        pizza.veggies.add(veggie1)
+        self.assertEqual(pizza.history.count(), 3)
+        pizza.veggies.add(veggie2)
+        self.assertEqual(pizza.history.count(), 3)
+
+        pizza.meats.set([meat1, meat2])
+
+        pizza_history = list(pizza.history.all())
+        self.assertEqual(len(pizza_history), 4)
+        self.assertRecordValues(
+            pizza_history[3],
+            Pizza,
+            {"id": pizza.id, "name": "Plain", "history_type": "+"},
+        )
+        self.assertListEqual(
+            list(pizza_history[3].cheeses.values_list("pk", flat=True)), []
+        )
+        self.assertListEqual(
+            list(pizza_history[3].meats.values_list("pk", flat=True)), []
+        )
+        self.assertRecordValues(
+            pizza_history[2],
+            Pizza,
+            {"id": pizza.id, "name": "Cheese", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[2].cheeses.values_list("pk", flat=True)), []
+        )
+        self.assertListEqual(
+            list(pizza_history[2].meats.values_list("pk", flat=True)), []
+        )
+        self.assertRecordValues(
+            pizza_history[1],
+            Pizza,
+            {"id": pizza.id, "name": "Cheese", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[1].cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(
+            list(pizza_history[1].meats.values_list("pk", flat=True)), []
+        )
+        self.assertRecordValues(
+            pizza_history[0],
+            Pizza,
+            {"id": pizza.id, "name": "Cheese", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[0].cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(
+            list(pizza_history[0].meats.values_list("pk", flat=True)),
+            [meat1.pk, meat2.pk],
+        )
+
+        self.assertListEqual(
+            list(pizza.cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(
+            list(pizza.meats.values_list("pk", flat=True)), [meat1.pk, meat2.pk]
+        )
+        self.assertListEqual(
+            list(pizza.veggies.values_list("pk", flat=True)), [veggie1.pk, veggie2.pk]
+        )
+
+        pizza.name = "Pepperoni & Sausage"
+        pizza.save()
+
+        pizza_history = list(pizza.history.all())
+        self.assertEqual(len(pizza_history), 5)
+        self.assertRecordValues(
+            pizza_history[4],
+            Pizza,
+            {"id": pizza.id, "name": "Plain", "history_type": "+"},
+        )
+        self.assertListEqual(
+            list(pizza_history[4].cheeses.values_list("pk", flat=True)), []
+        )
+        self.assertListEqual(
+            list(pizza_history[4].meats.values_list("pk", flat=True)), []
+        )
+        self.assertRecordValues(
+            pizza_history[3],
+            Pizza,
+            {"id": pizza.id, "name": "Cheese", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[3].cheeses.values_list("pk", flat=True)), []
+        )
+        self.assertListEqual(
+            list(pizza_history[3].meats.values_list("pk", flat=True)), []
+        )
+        self.assertRecordValues(
+            pizza_history[2],
+            Pizza,
+            {"id": pizza.id, "name": "Cheese", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[2].cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(
+            list(pizza_history[2].meats.values_list("pk", flat=True)), []
+        )
+        self.assertRecordValues(
+            pizza_history[1],
+            Pizza,
+            {"id": pizza.id, "name": "Cheese", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[1].cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(
+            list(pizza_history[1].meats.values_list("pk", flat=True)),
+            [meat1.pk, meat2.pk],
+        )
+        self.assertRecordValues(
+            pizza_history[0],
+            Pizza,
+            {"id": pizza.id, "name": "Pepperoni & Sausage", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[0].cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(
+            list(pizza_history[0].meats.values_list("pk", flat=True)),
+            [meat1.pk, meat2.pk],
+        )
+
+        self.assertListEqual(
+            list(pizza.cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(
+            list(pizza.meats.values_list("pk", flat=True)), [meat1.pk, meat2.pk]
+        )
+        self.assertListEqual(
+            list(pizza.veggies.values_list("pk", flat=True)), [veggie1.pk, veggie2.pk]
+        )
+
+        pizza.veggies.clear()
+
+        self.assertEqual(len(pizza.history.all()), 5)
+
+        pizza.cheeses.clear()
+
+        pizza_history = list(pizza.history.all())
+        self.assertEqual(len(pizza_history), 6)
+        self.assertRecordValues(
+            pizza_history[5],
+            Pizza,
+            {"id": pizza.id, "name": "Plain", "history_type": "+"},
+        )
+        self.assertListEqual(
+            list(pizza_history[5].cheeses.values_list("pk", flat=True)), []
+        )
+        self.assertListEqual(
+            list(pizza_history[5].meats.values_list("pk", flat=True)), []
+        )
+        self.assertRecordValues(
+            pizza_history[4],
+            Pizza,
+            {"id": pizza.id, "name": "Cheese", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[4].cheeses.values_list("pk", flat=True)), []
+        )
+        self.assertListEqual(
+            list(pizza_history[4].meats.values_list("pk", flat=True)), []
+        )
+        self.assertRecordValues(
+            pizza_history[3],
+            Pizza,
+            {"id": pizza.id, "name": "Cheese", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[3].cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(
+            list(pizza_history[3].meats.values_list("pk", flat=True)), []
+        )
+        self.assertRecordValues(
+            pizza_history[2],
+            Pizza,
+            {"id": pizza.id, "name": "Cheese", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[2].cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(
+            list(pizza_history[2].meats.values_list("pk", flat=True)),
+            [meat1.pk, meat2.pk],
+        )
+        self.assertRecordValues(
+            pizza_history[1],
+            Pizza,
+            {"id": pizza.id, "name": "Pepperoni & Sausage", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[1].cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(
+            list(pizza_history[1].meats.values_list("pk", flat=True)),
+            [meat1.pk, meat2.pk],
+        )
+        self.assertRecordValues(
+            pizza_history[0],
+            Pizza,
+            {"id": pizza.id, "name": "Pepperoni & Sausage", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[0].cheeses.values_list("pk", flat=True)), []
+        )
+        self.assertListEqual(
+            list(pizza_history[0].meats.values_list("pk", flat=True)),
+            [meat1.pk, meat2.pk],
+        )
+
+        self.assertListEqual(list(pizza.cheeses.values_list("pk", flat=True)), [])
+        self.assertListEqual(
+            list(pizza.meats.values_list("pk", flat=True)), [meat1.pk, meat2.pk]
+        )
+        self.assertListEqual(list(pizza.veggies.values_list("pk", flat=True)), [])
+
+        pizza.meats.remove(meat1)
+
+        pizza_history = list(pizza.history.all())
+        self.assertEqual(len(pizza_history), 7)
+        self.assertRecordValues(
+            pizza_history[6],
+            Pizza,
+            {"id": pizza.id, "name": "Plain", "history_type": "+"},
+        )
+        self.assertListEqual(
+            list(pizza_history[6].cheeses.values_list("pk", flat=True)), []
+        )
+        self.assertListEqual(
+            list(pizza_history[6].meats.values_list("pk", flat=True)), []
+        )
+        self.assertFalse(hasattr(pizza_history[6], "veggies"))
+        self.assertRecordValues(
+            pizza_history[5],
+            Pizza,
+            {"id": pizza.id, "name": "Cheese", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[5].cheeses.values_list("pk", flat=True)), []
+        )
+        self.assertListEqual(
+            list(pizza_history[5].meats.values_list("pk", flat=True)), []
+        )
+        self.assertFalse(hasattr(pizza_history[5], "veggies"))
+        self.assertRecordValues(
+            pizza_history[4],
+            Pizza,
+            {"id": pizza.id, "name": "Cheese", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[4].cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(
+            list(pizza_history[4].meats.values_list("pk", flat=True)), []
+        )
+        self.assertFalse(hasattr(pizza_history[4], "veggies"))
+        self.assertRecordValues(
+            pizza_history[3],
+            Pizza,
+            {"id": pizza.id, "name": "Cheese", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[3].cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(
+            list(pizza_history[3].meats.values_list("pk", flat=True)),
+            [meat1.pk, meat2.pk],
+        )
+        self.assertFalse(hasattr(pizza_history[3], "veggies"))
+        self.assertRecordValues(
+            pizza_history[2],
+            Pizza,
+            {"id": pizza.id, "name": "Pepperoni & Sausage", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[2].cheeses.values_list("pk", flat=True)), [cheese1.pk]
+        )
+        self.assertListEqual(
+            list(pizza_history[2].meats.values_list("pk", flat=True)),
+            [meat1.pk, meat2.pk],
+        )
+        self.assertFalse(hasattr(pizza_history[2], "veggies"))
+        self.assertRecordValues(
+            pizza_history[1],
+            Pizza,
+            {"id": pizza.id, "name": "Pepperoni & Sausage", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[1].cheeses.values_list("pk", flat=True)), []
+        )
+        self.assertListEqual(
+            list(pizza_history[1].meats.values_list("pk", flat=True)),
+            [meat1.pk, meat2.pk],
+        )
+        self.assertFalse(hasattr(pizza_history[1], "veggies"))
+        self.assertRecordValues(
+            pizza_history[0],
+            Pizza,
+            {"id": pizza.id, "name": "Pepperoni & Sausage", "history_type": "~"},
+        )
+        self.assertListEqual(
+            list(pizza_history[0].cheeses.values_list("pk", flat=True)), []
+        )
+        self.assertListEqual(
+            list(pizza_history[0].meats.values_list("pk", flat=True)), [meat2.pk]
+        )
+        self.assertFalse(hasattr(pizza_history[0], "veggies"))
+
+        self.assertListEqual(list(pizza.cheeses.values_list("pk", flat=True)), [])
+        self.assertListEqual(list(pizza.meats.values_list("pk", flat=True)), [meat2.pk])
+        self.assertListEqual(list(pizza.veggies.values_list("pk", flat=True)), [])
 
     def test_file_field(self):
         model = FileModel.objects.create(file=get_fake_file("name"))
