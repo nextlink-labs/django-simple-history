@@ -728,3 +728,21 @@ class ModelWithExcludedManyToMany(models.Model):
     name = models.CharField(max_length=15, unique=True)
     other = models.ManyToManyField(ManyToManyModelOther)
     history = HistoricalRecords(excluded_fields=["other"])
+
+
+class PizzaTopping(models.Model):
+    name = models.CharField(max_length=50)
+
+
+class Pizza(models.Model):
+    name = models.CharField(max_length=50)
+
+    cheeses = models.ManyToManyField(
+        PizzaTopping, blank=True, related_name="pizza_cheese"
+    )
+    meats = models.ManyToManyField(PizzaTopping, blank=True, related_name="pizza_meat")
+    veggies = models.ManyToManyField(
+        PizzaTopping, blank=True, related_name="pizza_veggie"
+    )
+
+    history = HistoricalRecords(m2m_fields=["cheeses", "meats"])
